@@ -1,4 +1,4 @@
-#!/usr/local/bin/bash
+#!/bin/bash
 
 # install https://github.com/ericchiang/pup
 
@@ -123,11 +123,7 @@ HandleModule() {
     readarray -t depList < <(echo "${dependenciesInfo}" | jq -r ".[]")
 
     if [ "${#depList[@]}" -eq 0 ]; then
-        if [[ ! $revision == v*-*-* ]]; then
-            echo "${initialDepName}@${revision} ${license}" >> "${BLACK_FILE}"
-        else
-            echo "${initialDepName}@${sha} ${license}" >> "${BLACK_FILE}"
-        fi
+        echo "${initialDepName}@${revisionOrigin} ${license}" >> "${BLACK_FILE}"
         return
     fi
 
@@ -183,6 +179,7 @@ do
     echo ""
     echo "------${i}. Module import: ${moduleName} --------"
     revision=$(echo "${line}" | cut -d " " -f2)
+    revisionOrigin="${revision}"
     i=$((i+1))
 
     if [[ "${moduleName}" == "${revision}" ]]; then

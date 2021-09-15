@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # install https://github.com/ericchiang/pup
 
 findTagSHA() {
@@ -72,7 +73,7 @@ findSource() {
         setUpSourceInfo "go-source"
     fi
 
-    dependencyName="${dependencyName%/tree*}"
+    dependencyName="${dependencyName%/tree/*}"
 
     if [[ ! $dependencyName == https://github.com* ]]; then
         echo "dependency ${dependencyName} has got unsupported git provider. We support only 'github' git provider..."
@@ -141,13 +142,13 @@ createCurration() {
              ( .coordinates.namespace ) |= \"${namespace}\" | 
              ( .coordinates.provider ) |= \"${provider}\" | 
              ( .coordinates.type ) |= \"${type}\" | 
-             ( .revisions ) += { \"${sha}\": { \"licensed\": { \"declared\": \"${licence}\" } } } |
+             ( .revisions ) += { \"${sha}\": { \"licensed\": { \"declared\": \"${license}\" } } } |
              ." "${curationFile}"
 
     popd || exit
 }
 
-clearDefFork="/home/user/projects/curated-data"
+clearDefFork="${HOME}/projects/curated-data"
 if [ ! -d "${clearDefFork}" ]; then
     echo "[ERROR] Currated data fork not found by path ${clearDefFork}"
     exit 1
@@ -158,9 +159,9 @@ while IFS= read -r line
 do
     moduleName=$(echo "${line}" | cut -d " " -f1 | cut -d "@" -f1)
     revision=$(echo "${line}" | cut -d " " -f1  | cut -d "@" -f2)
-    licence=$(echo "${line}" | cut -d " " -f2-)
+    license=$(echo "${line}" | cut -d " " -f2-)
 
-    echo "${moduleName} ${revision} ${licence}"
+    echo "${moduleName} ${revision} ${license}"
     findSource "${moduleName}"
 
     if [[ $revision == v*-*-* ]]; then
@@ -175,12 +176,17 @@ do
     fi
     echo "[INFO] URL: https://${dependencyName}/commit/${sha}"
     if [ -z "${sha}" ]; then
-        echo "FAIL"
+        echo "[ERROR] Unable to retrieve commit hash for dependency ${moduleName}"
         exit 1
     fi
     echo ""
 
-    createCurration
+    if [ ! "${license}" == "null" ]; then
+        createCurration
+    else
+        echo "[WARN] Skip dependency ${moduleName}. Can't retrieve license info. You should set up it manually."
+    fi
+
 done < "${modules}"
 
 createPullRequests "${moduleName}"
