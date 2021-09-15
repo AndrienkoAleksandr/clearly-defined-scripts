@@ -148,6 +148,10 @@ createCurration() {
 }
 
 clearDefFork="/home/user/projects/curated-data"
+if [ ! -d "${clearDefFork}" ]; then
+    echo "[ERROR] Currated data fork not found by path ${clearDefFork}"
+    exit 1
+fi
 modules="currations"
 
 while IFS= read -r line

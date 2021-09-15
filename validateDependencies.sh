@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/local/bin/bash
 
 # install https://github.com/ericchiang/pup
 
@@ -56,6 +56,10 @@ setUpFullSHA() {
     sha=$(echo "${shaInfo}" | yq -r ".sha")
 }
 
+findLicenseId() {
+    license=$(curl -L -s -H "Authorization: bearer ${GITHUB_TOKEN}" "https://api.github.com/repos/${dependencyIdentifier}" | yq -r ".license.spdx_id")
+}
+
 findSource() {
     dependencyName="${1}"
     initialDepName="${1}"
@@ -73,10 +77,11 @@ findSource() {
         setUpSourceInfo "go-source"
     fi
 
-    dependencyName="${dependencyName%/tree*}"
+    dependencyName="${dependencyName%/tree/*}"
 
     if [[ ! $dependencyName == https://github.com* ]]; then
         echo "Dependency ${initialDepName} => '${dependencyName}' has got unsupported git provider. We support only 'github' git provider..."
+        echo "${moduleName}" >> "${YELLOW_FILE}"
         return
     fi
 
@@ -92,6 +97,17 @@ findSource() {
     dependencyIdentifier=${dependencyName#github.com/}
 }
 
+writeDepInfo() {
+    file=${1}
+    echo "${initialDepName}" >> "${file}"
+    if [[ ! $revision == v*-*-* ]]; then
+        echo "https://github.com/${dependencyIdentifier}/tree/${revision}" >> "${file}"
+    fi
+    echo "https://github.com/${dependencyIdentifier}/tree/${sha}" >> "${file}"
+    echo "RATE ${score}"  >> "${file}"
+    echo "https://clearlydefined.io/definitions/${dep}" >> "${file}"
+    echo "" >> "${file}"
+}
 
 HandleModule() {
     dependencyName="${1}"
@@ -101,11 +117,20 @@ HandleModule() {
     HTTPS="https://"
 
     echo "================= ${dependencyName} ================="
-    dependenciesInfo=$(curl -s -G -d 'type=git' -d 'provider=github' -d 'matchCasing=true' -d "pattern=${dependencyIdentifier}" "${API_DEFINITIONS}")
+    dependenciesInfo=$(curl -s -G -d 'type=git' -d 'provider=github' -d 'matchCasing=true' -d "pattern=${dependencyIdentifier}/${sha}" "${API_DEFINITIONS}")
 
     # depList=( $( echo "${dependenciesInfo}" | jq -r ".[]") )
     readarray -t depList < <(echo "${dependenciesInfo}" | jq -r ".[]")
-    
+
+    if [ "${#depList[@]}" -eq 0 ]; then
+        if [[ ! $revision == v*-*-* ]]; then
+            echo "${initialDepName}@${revision} ${license}" >> "${BLACK_FILE}"
+        else
+            echo "${initialDepName}@${sha} ${license}" >> "${BLACK_FILE}"
+        fi
+        return
+    fi
+
     for dep in "${depList[@]}"; do
         if [[ ${dep} == git* ]]; then
             depInfo=$(curl -s "${API_DEFINITIONS}/${dep}")
@@ -115,6 +140,19 @@ HandleModule() {
                 # date=$(curl -s "${API_HARVEST}/${dep}" | \
                 #     jq -r '.clearlydefined."1.3.0".described.releaseDate')
                 echo "- ${score} ${dep} ${date}"
+                # echo "${initialDepName}" >> "${GREEN_FILE}"
+                writeDepInfo "${GREEN_FILE}"
+                newGrepped=$(cat "Dependencies.md" | grep "${initialDepName}")
+                if [ -z "${newGrepped}" ]; then
+                    writeDepInfo "${NEW_GREEN_FILE}"
+                fi
+            else
+                echo "${initialDepName}" >> "${RED_FILE}"
+                cqCreated=$(cat "Dependencies.md" | grep "${initialDepName}")
+                cqNew=$(cat "CQ" | grep "${initialDepName}")
+                if [[ -z "${cqCreated}" ]] && [[ -z "${cqNew}" ]]; then
+                    writeDepInfo "${CQ_FILE}"
+                fi
             fi
         fi
     done
@@ -122,6 +160,19 @@ HandleModule() {
 
 go list -mod=mod -m all > Modules
 modules=$(pwd)/Modules
+rm -rf "result"
+# Green dependency with good rate.
+GREEN_FILE="result/Green.txt"
+NEW_GREEN_FILE="result/NewGreen.txt"
+# licence rate is low. You have to create Eclipse 
+RED_FILE="result/Red.txt"
+# clearlydefined doesn't support this dependency type. Licence check is impossible.
+YELLOW_FILE="result/yellow.txt"
+# clearlydefined didn't find any result.
+BLACK_FILE="result/black.txt"
+CQ_FILE="result/CQ.txt"
+mkdir -p "result"
+touch ${GREEN_FILE} ${NEW_GREEN_FILE} ${RED_FILE} ${YELLOW_FILE} ${CQ_FILE}
 
 i=0
 while IFS= read -r line
@@ -155,13 +206,13 @@ do
         revision="${revision%+incompatible}"
         sha=$(findTagSHA 0 "${dependencyIdentifier}" "${revision}")
     fi
+    findLicenseId
 
     echo "[INFO] URL: https://${dependencyName}/commit/${sha}"
     if [[ -z "${dependencyName}" ]] || [[ -z "${sha}" ]]; then
         echo "[FAIL] We can't retrieve sha"
         continue
     fi
-
 
     echo "=================================================="
     HandleModule "${dependencyIdentifier}"
